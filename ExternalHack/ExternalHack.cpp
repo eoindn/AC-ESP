@@ -8,9 +8,25 @@
 // AssaultCube 1.2.0.2 offsets (will move to offsets.h later)
 const uintptr_t OFF_LOCAL_PLAYER = 0x10F4F4;   
 const uintptr_t OFF_HEALTH       = 0xF8;      
+const uintptr_t OFF_FEET_POS = 0X34;
+struct Vec3 {
+	float x;
+	float y;
+	float z;
+};
+const uintptr_t OFF_TEAM = 0x32C;
+const uintptr_t OFF_NAME = 0x225;
 
 const uintptr_t OFF_ENTITY_LIST = 0X10F4F8;  //relative to module base; pointer to array of player
 const uintptr_t OFF_PLAYER_COUNT = 0X10F500; // relative to module basel; int
+
+
+// ---------- Chunk 3b: player fields (relative to a player/ent address) ----------
+// TODO A: add OFF_FEET_POS (0x34), OFF_TEAM (0x32C), OFF_NAME (0x225)
+//         same style as OFF_HEALTH. Verify each in CE first!
+
+// TODO B: define struct Vec3 with three floats: x, y, z
+//         hint: one line. sizeof(Vec3) should be 12. Why?
 
 
 int main()
@@ -61,8 +77,8 @@ int main()
 	std::wcout << L"healthAddr: 0x" << std::hex << healthAddr << L"\n";
 	std::wcout << L"Health (C): " << std::dec << healthC << L"\n";
 
-	// ---------- Chunk 3a: entity list ----------
-	// TODO 1: read the entity-list pointer from (base + OFF_ENTITY_LIST) into a uintptr_t entityList.
+
+	// read the entity-list pointer from (base + OFF_ENTITY_LIST) into a uintptr_t entityList.
 
 	uintptr_t entityListPointer = 0;
 
@@ -72,51 +88,82 @@ int main()
 
 
 
-	// TODO 2: read the player count from (base + OFF_PLAYER_COUNT) into an int playerCount. Print it.
+	// read the player count from (base + OFF_PLAYER_COUNT) into an int playerCount. Print it.
 	
 	int playerCount = 0;
 	ReadProcessMemory(hProc, (LPCVOID)(base + OFF_PLAYER_COUNT), &playerCount, sizeof(playerCount), nullptr);
-	std::wcout << L"Player Count: " << playerCount << L"\n";
+	std::wcout << L"Player Count: " << playerCount << L"\n\n\n";
 
 
 
 
 
-	// TODO 3: if playerCount is < 0 or > 32, print an error, close the handle, and return 1.
+	//if playerCount is < 0 or > 32, print an error, close the handle, and return 1.
 	
 	if (playerCount < 0 || playerCount > 32) {
 	
-		std::wcout << L"Player count is garbage" << std::dec << GetLastError() << L"\n";
+		std::wcout << L"Player count is garbage" << std::dec << GetLastError() << L"\n\n\n\n";
 		CloseHandle(hProc);
 		return 1;
 	}
 
 
-	// TODO 4: for (int i = 0; i < playerCount; i++) {
-	
-	for (int i = 0; i < playerCount; i++) {
 
-		uintptr_t ent = 0;
-		uintptr_t slotAddr = entityListPointer + i * 4;
-	
-		ReadProcessMemory(hProc, (LPCVOID)slotAddr, &ent, sizeof(ent), nullptr);
-		if (ent == 0) {
-			continue;
+
+
+	while (true) {
+		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+			break;
+			
+			return 0;
+		};
+		for (int i = 0; i < playerCount; i++) {
+
+			uintptr_t ent = 0;
+			uintptr_t slotAddr = entityListPointer + i * 4;
+
+			ReadProcessMemory(hProc, (LPCVOID)slotAddr, &ent, sizeof(ent), nullptr);
+			if (ent == 0) {
+				continue;
+			}
+			int entHealth = 0;
+			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_HEALTH), &entHealth, sizeof(entHealth), nullptr);
+
+
+			Vec3 feet{};
+
+
+			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_FEET_POS), &feet, sizeof(feet), nullptr);
+
+
+			int team = 0;
+
+			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_TEAM), &team, sizeof(team), nullptr);
+			char name[16]{};
+
+			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_NAME), &name, sizeof(name), nullptr);
+			name[15] = '\0';
+
+
+
+			std::wcout << std::dec << i << L" | "
+
+				<< L"name " << name << L" | "
+				<< L"team " << team << L" | "
+				<< entHealth << L"hp | "
+				<< feet.x << L" " << feet.y << L" " << feet.z << L"\n";
+
+			Sleep(100);
+
+
 		}
-		int entHealth = 0;
-		ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_HEALTH), &entHealth, sizeof(entHealth), nullptr);
-
-		std::wcout << "\n\n" << L"Player: " << i << L"\n" << std::hex << ent << L"\n" << L"Health: " << std::dec << entHealth << L"\n\n";
 	}
-
-
-	//     a. read the pointer at (entityList + i * 4) into a uintptr_t ent
-	//     b. if ent == 0 → continue
-	//     c. read an int from (ent + OFF_HEALTH) into entHealth
-	//     d. print: i, ent (hex), entHealth (decimal)
-	// }
-
-
 	CloseHandle(hProc);
 	return 0;
+
+
+
+
+
+	
 }
