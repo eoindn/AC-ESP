@@ -43,6 +43,19 @@ bool WorldToScreen(Vec3 pos, Vec2& screen, const float m[16], int width, int hei
 	};
 
 
+	// todo 1: divide by w to get the normalised device coordinates (-1..1)
+	float ndcX = clipX / clipW;
+	float ndcY = clipY/ clipW;
+
+	screen.x = (clipW / 2.0f) + ndcX * (clipW / 2.0f);
+
+	screen.y = (1 - ndcY) * (clipY / 2); //inverted for top left drawing
+
+
+
+
+
+
 
 
 
