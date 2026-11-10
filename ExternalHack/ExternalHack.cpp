@@ -19,13 +19,26 @@ const uintptr_t OFF_TEAM = 0x32C;
 const uintptr_t OFF_NAME = 0x225;
 
 const uintptr_t OFF_ENTITY_LIST = 0X10F4F8;  //relative to module base; pointer to array of player
-const uintptr_t OFF_PLAYER_COUNT = 0X10F500; // relative to module base; int
+const uintptr_t OFF_PLAYER_COUNT = 0X10F500;// relative to module base; int
 
+
+const uintptr_t OFF_SCREEN_HEIGHT = 0X110C98;
+const uintptr_t OFF_SCREEN_WIDTH = 0X110C94;
 
 struct Vec2 {
 	float x;
 	float y;
 };
+
+
+
+
+
+
+
+
+
+
 bool WorldToScreen(Vec3 pos, Vec2& screen, const float m[16], int width, int height) {
 
 
@@ -47,34 +60,15 @@ bool WorldToScreen(Vec3 pos, Vec2& screen, const float m[16], int width, int hei
 	float ndcX = clipX / clipW;
 	float ndcY = clipY/ clipW;
 
-	screen.x = (clipW / 2.0f) + ndcX * (clipW / 2.0f);
 
-	screen.y = (1 - ndcY) * (clipY / 2); //inverted for top left drawing
+	// view port transformations
+	screen.x = (width / 2.0f) + ndcX * (width / 2.0f);
+	screen.y = (1 - ndcY) * (height / 2.0f);
+	//inverted for top left drawing
 
-
-
-
-
-
-
-
-
+	return true;
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -104,12 +98,22 @@ int main()
 
 
 
+
 	HANDLE hProc = OpenProcess(PROCESS_VM_READ, FALSE, procId);
 	if (hProc == NULL)
 	{
 		std::wcout << L"OpenProcess failed, nuking your entire computer... error " << std::dec << GetLastError() << L"\n";
 		return 1;
 	}
+
+	uintptr_t screenHeight = OFF_SCREEN_HEIGHT + base;
+	uintptr_t screenWidth = OFF_SCREEN_WIDTH + base;
+
+	int actualHeight = 0;
+	int actualWidth = 0;
+	ReadProcessMemory(hProc, (LPCVOID)screenHeight, &actualHeight, sizeof(actualHeight), nullptr);
+	ReadProcessMemory(hProc, (LPCVOID)screenWidth, &actualWidth, sizeof(actualWidth), nullptr);
+
 
 	uintptr_t localPlayerAddr = base + OFF_LOCAL_PLAYER;     
 
@@ -163,10 +167,6 @@ int main()
 
 
 	// ---- Live display setup ----
-	// Instead of printing new lines forever (scrolling), each frame we move the
-	// console cursor back to the same spot and overwrite the old frame in place.
-	// hConsole is OUR console's output handle. GetStdHandle doesn't open anything
-	// new, so we must NOT CloseHandle it (unlike hProc, which we opened ourselves).
 	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (hConsole == INVALID_HANDLE_VALUE || hConsole == NULL)
 	{
@@ -192,6 +192,9 @@ int main()
 	cursorInfo.bVisible = FALSE;
 	SetConsoleCursorInfo(hConsole, &cursorInfo);
 
+
+
+	// MAIN LOOP
 	while (true) {
 		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
 			break;   // leaves the loop, falls through to CloseHandle below
@@ -202,8 +205,6 @@ int main()
 
 
 		// get view matrix
-
-
 		float matrix[16]{};
 		ReadProcessMemory(hProc, (LPCVOID)(base + OFF_MATRIX), &matrix, sizeof(matrix), nullptr);
 
@@ -212,7 +213,9 @@ int main()
 
 		std::wcout << L"View Matrix: " << L"\n";
 
-		std::wcout << std::fixed << std::setprecision(2);
+		// std::right: the player table below switches to std::left, and that setting
+		// sticks around, so switch back here or the matrix goes wonky next frame.
+		std::wcout << std::fixed << std::setprecision(2) << std::right;
 
 
 
@@ -229,8 +232,14 @@ int main()
 		}
 		std::wcout << L"\n\n";
 
-
-
+		// Header row: same column widths as the player rows below, so they line up.
+		std::wcout << std::left
+			<< std::setw(4)  << L"#"
+			<< std::setw(16) << L"NAME"
+			<< std::setw(6)  << L"TEAM"
+			<< std::setw(6)  << L"HP"
+			<< std::setw(14) << L"SCREEN"
+			<< L"\n";
 
 		for (int i = 0; i < playerCount; i++) {
 
@@ -262,36 +271,41 @@ int main()
 			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_NAME), &name, sizeof(name), nullptr);
 			name[15] = '\0';
 
+			// Do the maths first, print afterwards. W2S only calculates.
+			Vec2 screenPos = {};
+			bool visible = WorldToScreen(feet, screenPos, matrix, actualWidth, actualHeight);
 
+			// The first three columns are the same for every player.
+			std::wcout << std::left << std::dec
+				<< std::setw(4)  << i
+				<< std::setw(16) << name
+				<< std::setw(6)  << team;
 
-			std::wcout << std::dec << i << L" | "
+			// HP and SCREEN columns depend on the player's state.
+			if (entHealth <= 0)
+			{
+				// Dead bots: no point showing a screen position.
+				std::wcout << std::setw(6) << L"DEAD" << std::setw(14) << L"";
+			}
+			else if (visible)
+			{
+				// Cast to int: we care about whole pixels, not 408.64.
+				std::wcout << std::setw(6) << entHealth
+					<< std::setw(5) << (int)screenPos.x << L", "
+					<< std::setw(7) << (int)screenPos.y;
+			}
+			else
+			{
+				std::wcout << std::setw(6) << entHealth << std::setw(14) << L"off-screen";
+			}
 
-				<< L"name " << name << L" | "
-				<< L"team " << team << L" | "
-				<< entHealth << L"hp | "
-				<< feet.x << L" " << feet.y << L" " << feet.z
-				<< L"          \n";   // trailing spaces wipe leftovers if this line got shorter
-
-
+			std::wcout << L"\n";
+			
 
 
 
 		
 		}
-
-
-
-	
-
-
-
-
-
-
-
-
-
-
 		Sleep(100);   // once per frame (~10 updates/sec), not once per player
 	}
 
