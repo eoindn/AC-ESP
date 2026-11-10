@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="ExternalHack/ExternalHack.vcxproj" Id="73c8fcaf-5a89-4ebd-bbd5-b802b3f23579" />
+</Solution>

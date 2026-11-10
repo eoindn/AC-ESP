@@ -140,6 +140,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ExternalHack.cpp" />
+    <ClCompile Include="proc\proc.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="proc\proc.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

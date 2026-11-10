@@ -1,0 +1,21 @@
+# Visual Studio cache / per-user settings
+.vs/
+*.user
+
+# Build output folders (any level)
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+Win32/
+
+# Compiler / linker leftovers
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.exe
+*.tlog
+*.log
+*.recipe
+*.json
