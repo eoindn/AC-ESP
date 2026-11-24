@@ -2,6 +2,7 @@
 
 #include "proc/proc.h"
 #include <iomanip>
+#include "overlay.h"
 
 static_assert(sizeof(void*) == 4, "Build as x86, not x64: AssaultCube is a 32-bit game.");
 
@@ -192,7 +193,7 @@ int main()
 	cursorInfo.bVisible = FALSE;
 	SetConsoleCursorInfo(hConsole, &cursorInfo);
 
-
+	OverlayFindGame(L"AssaultCube");
 
 	// MAIN LOOP
 	while (true) {
@@ -300,6 +301,13 @@ int main()
 			}
 
 			std::wcout << L"\n";
+
+			
+
+
+
+
+
 			
 
 
