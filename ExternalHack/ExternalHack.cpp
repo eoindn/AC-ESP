@@ -2,6 +2,7 @@
 
 #include "proc/proc.h"
 #include <iomanip>
+#include "overlay.h"
 
 static_assert(sizeof(void*) == 4, "Build as x86, not x64: AssaultCube is a 32-bit game.");
 
@@ -24,6 +25,8 @@ const uintptr_t OFF_PLAYER_COUNT = 0X10F500;// relative to module base; int
 
 const uintptr_t OFF_SCREEN_HEIGHT = 0X110C98;
 const uintptr_t OFF_SCREEN_WIDTH = 0X110C94;
+
+const uintptr_t OFF_HEAD_POS = 0x4;
 
 struct Vec2 {
 	float x;
@@ -88,7 +91,7 @@ int main()
 	uintptr_t base = GetModuleBaseAddress(procId, L"ac_client.exe");
 
 	std::wcout << L"PID:  " << procId << L"\n";
-	std::wcout << L"Base: 0x" << std::hex << base << L"\n";   
+	std::wcout << L"Base: 0x" << std::hex << base << L"\n";
 
 
 
@@ -115,20 +118,20 @@ int main()
 	ReadProcessMemory(hProc, (LPCVOID)screenWidth, &actualWidth, sizeof(actualWidth), nullptr);
 
 
-	uintptr_t localPlayerAddr = base + OFF_LOCAL_PLAYER;     
+	uintptr_t localPlayerAddr = base + OFF_LOCAL_PLAYER;
 
-	uintptr_t playerBase = 0;                                  
+	uintptr_t playerBase = 0;
 	ReadProcessMemory(hProc, (LPCVOID)localPlayerAddr, &playerBase, sizeof(playerBase), nullptr);
 
-	int health = 0;                                           
+	int health = 0;
 	ReadProcessMemory(hProc, (LPCVOID)(playerBase + OFF_HEALTH), &health, sizeof(health), nullptr);
 
 	std::wcout << L"playerBase: 0x" << std::hex << playerBase << L"\n";
 	std::wcout << L"Health (B): " << std::dec << health << L"\n";
 
 
-	uintptr_t healthAddr = FindDMAAddy(hProc, localPlayerAddr, { OFF_HEALTH });   
-	int healthC = 0;                                                               
+	uintptr_t healthAddr = FindDMAAddy(hProc, localPlayerAddr, { OFF_HEALTH });
+	int healthC = 0;
 	ReadProcessMemory(hProc, (LPCVOID)healthAddr, &healthC, sizeof(healthC), nullptr);
 
 	std::wcout << L"healthAddr: 0x" << std::hex << healthAddr << L"\n";
@@ -139,14 +142,14 @@ int main()
 
 	uintptr_t entityListPointer = 0;
 
-	ReadProcessMemory(hProc, (LPCVOID)(base + OFF_ENTITY_LIST),&entityListPointer, sizeof(entityListPointer),nullptr );
+	ReadProcessMemory(hProc, (LPCVOID)(base + OFF_ENTITY_LIST), &entityListPointer, sizeof(entityListPointer), nullptr);
 	std::wcout << L"Entity List Pointer: " << std::hex << entityListPointer << L"\n";
 
 
 
 
 	// read the player count from (base + OFF_PLAYER_COUNT) into an int playerCount. Print it.
-	
+
 	int playerCount = 0;
 	ReadProcessMemory(hProc, (LPCVOID)(base + OFF_PLAYER_COUNT), &playerCount, sizeof(playerCount), nullptr);
 	std::wcout << L"Player Count: " << playerCount << L"\n\n\n";
@@ -156,9 +159,9 @@ int main()
 
 
 	//if playerCount is < 0 or > 32, print an error, close the handle, and return 1.
-	
+
 	if (playerCount < 0 || playerCount > 32) {
-	
+
 		std::wcout << L"Player count is garbage: " << std::dec << playerCount << L"\n";
 		CloseHandle(hProc);
 		return 1;
@@ -192,12 +195,57 @@ int main()
 	cursorInfo.bVisible = FALSE;
 	SetConsoleCursorInfo(hConsole, &cursorInfo);
 
+	if (OverlayFindGame(L"AssaultCube") == false) {
+		DWORD error = GetLastError();
+		std::wcout << "Failed to find the game:  " << error;
+
+
+	};
+
+	// box loop
+
+
+	//todo : call overlayCreate() if it return false clean up the handle and return 1
+	if (OverlayCreate() == false) {
+		CloseHandle(hProc);
+		return 1;
+
+	}
+
+
 
 
 	// MAIN LOOP
 	while (true) {
+
+
+
+		MSG msg;
+		while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+
+			TranslateMessage(&msg); // turns raw key presses into character typed notes
+			DispatchMessageW(&msg); // deliver the note to the windows WndProc
+
+		
+		}
+
+
+		// update overlay
+		if (OverlayFollowGame() == false) {
+			DWORD error = GetLastError();
+			std::wcout << "Failed to track game window: " << error;
+			break;   // falls through to CloseHandle below the loop
+		}
+
+
 		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
 			break;   // leaves the loop, falls through to CloseHandle below
+		}
+
+		// start a fresh hidden canvas for this frame (cleared to black = see-through)
+		// AFTER the Esc check: breaking between Begin and End would skip the cleanup
+		if (OverlayBeginFrame() == false) {
+			break;
 		}
 
 		// Jump back to the top of the frame and draw over the previous one.
@@ -234,10 +282,10 @@ int main()
 
 		// Header row: same column widths as the player rows below, so they line up.
 		std::wcout << std::left
-			<< std::setw(4)  << L"#"
+			<< std::setw(4) << L"#"
 			<< std::setw(16) << L"NAME"
-			<< std::setw(6)  << L"TEAM"
-			<< std::setw(6)  << L"HP"
+			<< std::setw(6) << L"TEAM"
+			<< std::setw(6) << L"HP"
 			<< std::setw(14) << L"SCREEN"
 			<< L"\n";
 
@@ -262,6 +310,10 @@ int main()
 
 			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_FEET_POS), &feet, sizeof(feet), nullptr);
 
+			Vec3 head{};
+
+			ReadProcessMemory(hProc, (LPCVOID)(ent + OFF_HEAD_POS), &head, sizeof(head), nullptr);
+
 
 			int team = 0;
 
@@ -272,14 +324,18 @@ int main()
 			name[15] = '\0';
 
 			// Do the maths first, print afterwards. W2S only calculates.
-			Vec2 screenPos = {};
-			bool visible = WorldToScreen(feet, screenPos, matrix, actualWidth, actualHeight);
+			Vec2 feetScreen = {};
+			bool feetVisible = WorldToScreen(feet, feetScreen, matrix, actualWidth, actualHeight);
+
+
+			Vec2 headScreen = {};
+			bool headVisible = WorldToScreen(head, headScreen, matrix, actualWidth, actualHeight);
 
 			// The first three columns are the same for every player.
 			std::wcout << std::left << std::dec
-				<< std::setw(4)  << i
+				<< std::setw(4) << i
 				<< std::setw(16) << name
-				<< std::setw(6)  << team;
+				<< std::setw(6) << team;
 
 			// HP and SCREEN columns depend on the player's state.
 			if (entHealth <= 0)
@@ -287,25 +343,45 @@ int main()
 				// Dead bots: no point showing a screen position.
 				std::wcout << std::setw(6) << L"DEAD" << std::setw(14) << L"";
 			}
-			else if (visible)
+			else if (feetVisible && headVisible)
 			{
 				// Cast to int: we care about whole pixels, not 408.64.
 				std::wcout << std::setw(6) << entHealth
-					<< std::setw(5) << (int)screenPos.x << L", "
-					<< std::setw(7) << (int)screenPos.y;
+					<< std::setw(5) << (int)feetScreen.x << L", "
+					<< std::setw(7) << (int)feetScreen.y;
+
+				// Box: screen y grows DOWNWARD, so feet.y > head.y and height is positive.
+				float height = feetScreen.y - headScreen.y;
+				float width = height / 2;              // people are ~2x taller than wide
+				float left = headScreen.x - width / 2; // centre the box on the head
+				float top = headScreen.y;
+
+				// Health bar: a fixed 3px gap left of the box, so it stays glued at any distance.
+				float barWidth = width / 8;
+				float gap = 3;
+				float barLeft = left - gap - barWidth;
+				float fillHeight = entHealth / 100.0f * height;  // 100.0f = float division, not int
+				float fillTop = top + height - fillHeight;       // anchored to the bottom, drains downward
+
+				// Never pure black: that's the overlay's see-through colour key.
+				COLORREF red = RGB(255, 0, 0);
+				COLORREF green = RGB(0, 255, 0);
+				OverlayDrawBox(left, top, width, height, red);
+				OverlayFillHealthBox(barLeft, fillTop, barWidth, fillHeight, green); // fill first...
+				OverlayDrawBox(barLeft, top, barWidth, height, red);                 // ...outline on top
 			}
 			else
 			{
 				std::wcout << std::setw(6) << entHealth << std::setw(14) << L"off-screen";
 			}
-
-			std::wcout << L"\n";
 			
 
-
-
-		
+			std::wcout << L"\n";
 		}
+
+		// copy the finished frame onto the overlay and free this frame's GDI objects
+		OverlayEndFrame();
+
 		Sleep(100);   // once per frame (~10 updates/sec), not once per player
 	}
 
